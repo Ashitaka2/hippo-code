@@ -1,6 +1,8 @@
 import torch
 import pytorch_lightning as pl
+from pytorch_lightning.loggers import CSVLogger
 
+csv_logger = CSVLogger("logs", name="my_model")
 
 def pl_train(cfg, pl_model_class):
     if cfg.seed is not None:
@@ -21,16 +23,19 @@ def pl_train(cfg, pl_model_class):
         logger.log_hyperparams(cfg.train)
         profiler_args['logger'] = logger
     print("profiler args", profiler_args)
+    
     trainer = pl.Trainer(
-        # gpus=1 if config['gpu'] else None,
-        gpus=1,
+        gpus=1, #repo 자체가 multi-GPU 지원 안하는듯
+        # gpus=4, # -1 uses all possible gpus
         gradient_clip_val=cfg.train.gradient_clip_val,
         max_epochs=1 if cfg.smoke_test else cfg.train.epochs,
         progress_bar_refresh_rate=1,
         limit_train_batches=cfg.train.limit_train_batches,
         track_grad_norm=2,
+        # distributed_backend='ddp', # for multi-GPU training? 
         **profiler_args,
-        logger=False,
+        # logger=False,
+        logger=csv_logger,
     )
 
     trainer.fit(model)

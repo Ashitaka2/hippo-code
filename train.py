@@ -23,7 +23,7 @@ class RNNTraining(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.dataset_cfg = dataset_cfg
-        self.dataset = DatasetBase.registry[dataset_cfg.name](dataset_cfg)
+        self.dataset = DatasetBase.registry[dataset_cfg.name](dataset_cfg) # 정확히 이게 뭐지?
         self.train_args = train_args
         self.model_args = model_args
         # self.model_args.cell_args.max_length = self.dataset.N # TODO fix datasets
@@ -93,11 +93,11 @@ class RNNTraining(pl.LightningModule):
         return self.dataset.test_loader
 
 
-@hydra.main(config_path="cfg", config_name="config.yaml")
+@hydra.main(config_path="cfg", config_name="config.yaml") #config.yaml 파일을 읽는다는 것
 def main(cfg: OmegaConf):
     # We want to add fields to cfg so need to call OmegaConf.set_struct
     OmegaConf.set_struct(cfg, False)
-    print(OmegaConf.to_yaml(cfg))
+    print(OmegaConf.to_yaml(cfg)) # setting 출력
     if cfg.runner.name == 'pl':
         from pl_runner import pl_train
         trainer, model = pl_train(cfg, RNNTraining)

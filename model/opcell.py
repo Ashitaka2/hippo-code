@@ -20,6 +20,8 @@ class OPLTICell(LTICell):
         # A, B = transition(type(self).measure, memory_order)
         A, B = transition(type(self).measure, memory_order, **measure_args)
         super().__init__(input_size, hidden_size, memory_size, memory_order, A, B, **kwargs)
+        
+        
 class OPLSICell(LSICell):
     # name = 'lagt'
     measure = None
@@ -45,9 +47,11 @@ class LegendreTranslateCell(OPLTICell):
 class LegendreTranslateSCell(OPLSICell):
     name = 'legts'
     measure = 'legt'
-class LegendreScaleCell(OPLSICell):
+    
+class LegendreScaleCell(OPLSICell): # legs class
     name = 'legs'
     measure = 'legs'
+    
 class LegendreScaleTCell(OPLTICell):
     name = 'legst'
     measure = 'legs'

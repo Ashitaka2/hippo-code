@@ -25,7 +25,7 @@ class CellBase(nn.Module):
     name = 'id'
     valid_keys = []
 
-    def default_initializers(self):
+    def default_initializers(self): # overide in submodules. 
         return {}
 
     def default_architecture(self):
@@ -36,13 +36,15 @@ class CellBase(nn.Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
 
-        self.architecture = self.default_architecture()
-        self.initializers = self.default_initializers()
-        if initializers is not None:
+        self.architecture = self.default_architecture() # architecture와
+        self.initializers = self.default_initializers() # initialization은 여기서 정의된다. super().__init__을 통해 submodule로 전파. 
+        if initializers is not None: # 뭐지 이거 통과안함 ㅋㅋㅋ 레전드
             self.initializers.update(initializers)
             print("Initializers:", initializers)
         if architecture is not None:
             self.architecture.update(architecture)
+            print("Architectures:", architecture)
+        # print("Really?")
 
         assert set(self.initializers.keys()).issubset(self.valid_keys)
         assert set(self.architecture.keys()).issubset(self.valid_keys)
@@ -97,7 +99,6 @@ class RNNCell(CellBase):
             'bias': True,
             }
 
-
     def __init__(self, input_size, hidden_size,
                  hidden_activation='tanh',
                  orthogonal=False,
@@ -135,135 +136,137 @@ class RNNCell(CellBase):
             self.W_hh = nn.Linear(self.hidden_size, self.hidden_size, bias=self.architecture['bias'])
             get_initializer(self.initializers['hh'], self.hidden_activation)(self.W_hh.weight)
 
-    def forward(self, input, h):
+    def forward(self, input, h): # 여기서의 forward는 어떻게 사용되는 것인가? <- 기본 세팅에서, 이거 통째로 comment out해도 아무 이상 없음. hidden state끼리 update가 이루어지지 않는다는 말. 
         ### Update hidden state
         hidden_preact = self.W_hx(input) + self.W_hh(h)
         hidden = self.hidden_activation_fn(hidden_preact)
-
+        
+        print("hidden state being updated?") # I don't think this is working..
+        
         return hidden, hidden
 
-class GatedRNNCell(RNNCell):
-    name = 'gru'
+# class GatedRNNCell(RNNCell):
+#     name = 'gru'
 
-    def __init__(self, input_size, hidden_size,
-                 gate='G', # 'N' | 'G'
-                 reset='N',
-                 **kwargs
-                 ):
-        self.gate  = gate
-        self.reset = reset
-        super().__init__(input_size, hidden_size, **kwargs)
+#     def __init__(self, input_size, hidden_size,
+#                  gate='G', # 'N' | 'G'
+#                  reset='N',
+#                  **kwargs
+#                  ):
+#         self.gate  = gate
+#         self.reset = reset
+#         super().__init__(input_size, hidden_size, **kwargs)
 
-    def reset_parameters(self):
-        super().reset_parameters()
+#     def reset_parameters(self):
+#         super().reset_parameters()
 
-        preact_ctor = Linear_
-        preact_args = [self.input_size + self.hidden_size, self.hidden_size, self.architecture['bias']]
-        self.W_g     = Gate(self.hidden_size, preact_ctor, preact_args, mechanism=self.gate)
-        self.W_reset = Gate(self.hidden_size, preact_ctor, preact_args, mechanism=self.reset)
+#         preact_ctor = Linear_
+#         preact_args = [self.input_size + self.hidden_size, self.hidden_size, self.architecture['bias']]
+#         self.W_g     = Gate(self.hidden_size, preact_ctor, preact_args, mechanism=self.gate)
+#         self.W_reset = Gate(self.hidden_size, preact_ctor, preact_args, mechanism=self.reset)
 
-    def forward(self, input, h):
-        hx = torch.cat((input, h), dim=-1)
-        reset = self.W_reset(hx)
+#     def forward(self, input, h):
+#         hx = torch.cat((input, h), dim=-1)
+#         reset = self.W_reset(hx)
 
-        _, update = super().forward(input, reset*h)
+#         _, update = super().forward(input, reset*h)
 
-        g = self.W_g(hx)
-        h = (1.-g) * h + g * update
+#         g = self.W_g(hx)
+#         h = (1.-g) * h + g * update
 
-        return h, h
+#         return h, h
 
-class MinimalRNNCell(CellBase):
-    name = 'mrnn'
+# class MinimalRNNCell(CellBase):
+#     name = 'mrnn'
 
-    valid_keys = ['hx', 'bias']
+#     valid_keys = ['hx', 'bias']
 
-    def default_initializers(self):
-        return {
-            'hx': 'xavier',
-            }
+#     def default_initializers(self):
+#         return {
+#             'hx': 'xavier',
+#             }
 
-    def default_architecture(self):
-        return {
-            'bias': True,
-            }
-
-
-    def __init__(self, input_size, hidden_size,
-                 hidden_activation='tanh',
-                 orthogonal=False,
-                 ortho_args=None,
-                 zero_bias_init=False,
-                 **kwargs
-                 ):
-
-        self.hidden_activation = hidden_activation
-        self.zero_bias_init=zero_bias_init
-
-        super().__init__(input_size, hidden_size,
-                **kwargs,
-                )
-
-    def reset_parameters(self):
-        self.W_hx = Linear_(self.input_size, self.hidden_size, bias=self.architecture['bias'], zero_bias_init=self.zero_bias_init)
-        get_initializer(self.initializers['hx'], self.hidden_activation)(self.W_hx.weight)
-        self.hidden_activation_fn = get_activation(self.hidden_activation, self.hidden_size)
-
-        preact_ctor = Linear_
-        preact_args = [self.input_size + self.hidden_size, self.hidden_size, self.architecture['bias']]
-        self.W_g  = Gate(self.hidden_size, preact_ctor, preact_args, mechanism='G')
+#     def default_architecture(self):
+#         return {
+#             'bias': True,
+#             }
 
 
-    def forward(self, input, h):
-        ### Update hidden state
-        hidden_preact = self.W_hx(input)
-        hidden = self.hidden_activation_fn(hidden_preact)
-        hx = torch.cat((input, h), dim=-1)
-        g = self.W_g(hx)
-        h = (1.-g) * h + g * hidden
+#     def __init__(self, input_size, hidden_size,
+#                  hidden_activation='tanh',
+#                  orthogonal=False,
+#                  ortho_args=None,
+#                  zero_bias_init=False,
+#                  **kwargs
+#                  ):
 
-        return h, h
+#         self.hidden_activation = hidden_activation
+#         self.zero_bias_init=zero_bias_init
+
+#         super().__init__(input_size, hidden_size,
+#                 **kwargs,
+#                 )
+
+#     def reset_parameters(self):
+#         self.W_hx = Linear_(self.input_size, self.hidden_size, bias=self.architecture['bias'], zero_bias_init=self.zero_bias_init)
+#         get_initializer(self.initializers['hx'], self.hidden_activation)(self.W_hx.weight)
+#         self.hidden_activation_fn = get_activation(self.hidden_activation, self.hidden_size)
+
+#         preact_ctor = Linear_
+#         preact_args = [self.input_size + self.hidden_size, self.hidden_size, self.architecture['bias']]
+#         self.W_g  = Gate(self.hidden_size, preact_ctor, preact_args, mechanism='G')
 
 
-class GatedSRNNCell(GatedRNNCell):
-    name = 'grus'
+#     def forward(self, input, h):
+#         ### Update hidden state
+#         hidden_preact = self.W_hx(input)
+#         hidden = self.hidden_activation_fn(hidden_preact)
+#         hx = torch.cat((input, h), dim=-1)
+#         g = self.W_g(hx)
+#         h = (1.-g) * h + g * hidden
 
-    def __init__(self, input_size, hidden_size,
-                 **kwargs
-                 ):
-        super().__init__(input_size, hidden_size, **kwargs)
+#         return h, h
 
-    def reset_parameters(self):
-        super().reset_parameters()
 
-    def forward(self, input, hidden):
-        hidden, t = hidden
+# class GatedSRNNCell(GatedRNNCell):
+#     name = 'grus'
 
-        hx = torch.cat((input, hidden), dim=-1)
-        reset = self.W_reset(hx)
+#     def __init__(self, input_size, hidden_size,
+#                  **kwargs
+#                  ):
+#         super().__init__(input_size, hidden_size, **kwargs)
 
-        _, update = super().forward(input, reset*hidden)
+#     def reset_parameters(self):
+#         super().reset_parameters()
 
-        g = self.W_g(hx)
-        g = g * 1. / (t+1)
-        h = (1.-g) * hidden + g * update
+#     def forward(self, input, hidden):
+#         hidden, t = hidden
 
-        return h, (h, t+1)
+#         hx = torch.cat((input, hidden), dim=-1)
+#         reset = self.W_reset(hx)
 
-    def default_state(self, input, batch_size=None):
-        batch_size = input.size(0) if batch_size is None else batch_size
-        return (input.new_zeros(batch_size, self.hidden_size, requires_grad=False),
-                0)
+#         _, update = super().forward(input, reset*hidden)
 
-    def output(self, state):
-        """ Converts a state into a single output (tensor) """
-        h, t = state
+#         g = self.W_g(hx)
+#         g = g * 1. / (t+1)
+#         h = (1.-g) * hidden + g * update
 
-        return h
+#         return h, (h, t+1)
 
-class ExpRNNCell(RNNCell):
-    """ Note: there is a subtle distinction between this and the ExpRNN original cell (now implemented as orthogonalcell.OrthogonalCell) in the initialization of hx, but this shouldn't matter """
-    name = 'exprnn'
+#     def default_state(self, input, batch_size=None):
+#         batch_size = input.size(0) if batch_size is None else batch_size
+#         return (input.new_zeros(batch_size, self.hidden_size, requires_grad=False),
+#                 0)
 
-    def __init__(self, input_size, hidden_size, **kwargs):
-        super().__init__(input_size, hidden_size, orthogonal=True, hidden_activation='modrelu', **kwargs)
+#     def output(self, state):
+#         """ Converts a state into a single output (tensor) """
+#         h, t = state
+
+#         return h
+
+# class ExpRNNCell(RNNCell):
+#     """ Note: there is a subtle distinction between this and the ExpRNN original cell (now implemented as orthogonalcell.OrthogonalCell) in the initialization of hx, but this shouldn't matter """
+#     name = 'exprnn'
+
+#     def __init__(self, input_size, hidden_size, **kwargs):
+#         super().__init__(input_size, hidden_size, orthogonal=True, hidden_activation='modrelu', **kwargs)

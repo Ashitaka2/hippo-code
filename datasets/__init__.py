@@ -43,6 +43,20 @@ class DatasetBase():
         return self.name if hasattr(self, 'name') else self.__name__
 
 
+
+class CustomTransform:
+    def __init__(self, input_size, N):
+        self.input_size = input_size
+        self.N = N
+    def __call__(self, x):
+        return x.view(self.input_size, self.N).t()
+    
+class PermuteTransform:
+            def __init__(self, permutation):
+                self.permutation = permutation
+            def __call__(self, x):
+                return x[self.permutation]
+    
 class MNIST(DatasetBase, MulticlassClassification):
     name = 'mnist'
     input_size = 1
@@ -50,16 +64,25 @@ class MNIST(DatasetBase, MulticlassClassification):
     output_len = 0
     N = 784
 
-    def prepare_data(self):
-        transform_list = [transforms.ToTensor(),
-                          transforms.Lambda(lambda x: x.view(self.input_size, self.N).t())]  # (N, input_size)
+    def prepare_data(self):        
+        
+        # transform_list = [transforms.ToTensor(),
+        #                   transforms.Lambda(lambda x: x.view(self.input_size, self.N).t())]  # (N, input_size)
+        transform_list = [transforms.ToTensor(), CustomTransform(self.input_size, self.N)]  # (N, input_size)
+        
         if self.dataset_cfg.permute:
             # below is another permutation that other works have used
             # permute = np.random.RandomState(92916)
             # permutation = torch.LongTensor(permute.permutation(784))
             permutation = utils.bitreversal_permutation(self.N)
-            transform_list.append(transforms.Lambda(lambda x: x[permutation]))
-        transform = transforms.Compose(transform_list)
+            transform_list.append(PermuteTransform(permutation))
+            # transform_list.append(transforms.Lambda(lambda x: x[permutation]))
+        
+        transform = transforms.Compose(transform_list) # Chain the transforms with Compose #ToTensor, resize (N, input_size), permute
+        
+        # from torchvision import datasets, transforms
+        # MNIST download http forbidden error (torchvision)
+
         self.train = datasets.MNIST(f'{self.path}/{self.name}', train=True, download=True, transform=transform)
         self.test = datasets.MNIST(f'{self.path}/{self.name}', train=False, transform=transform)
         self.split_train_val()

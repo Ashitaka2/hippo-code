@@ -10,7 +10,7 @@ model:
   dropout: 0.0
 train:
   optimizer: adam
-  batch_size: 100
+  batch_size: 100 # multi GPU consideration needed
   epochs: 50
   lr: 1e-3
   gradient_clip_val: 0.0
@@ -18,10 +18,10 @@ train:
   limit_train_batches: 1.0  # train on full dataset, can be used to toggle quick run
   verbose: True  # Whether to print out train/val results after each epoch
 dataset:
-  num_workers: 4
-wandb:
+  num_workers: 10
+wandb: #어떻게 쓰는 거지?
   project: ops_memory
   group: ''
   job_type: training
 smoke_test: False
-seed:
+seed: 

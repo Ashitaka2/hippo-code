@@ -14,8 +14,8 @@ class Model(nn.Module):
         input_size,
         output_size,
         output_len=0,
-        cell='lstm',
-        cell_args={},
+        cell='lstm', # cell의 종류. LegS가 들어간다. 
+        cell_args={}, 
         output_hiddens=[],
         embed_args=None,
         preprocess=None,
@@ -26,9 +26,9 @@ class Model(nn.Module):
         super(Model, self).__init__()
 
         # Save arguments needed for forward pass
-        self.input_size = input_size
-        self.output_size = output_size
-        self.output_len = output_len
+        self.input_size = input_size # dataset에서 정해짐 MNIST의 경우 1
+        self.output_size = output_size # dataset에서 정해짐 MNIST의 경우 10
+        self.output_len = output_len # dataset에서 정해짐 MNIST의 경우 0 (최종 hidden state를 classification에 사용한다는 뜻)
         assert output_len >= 0, f"output_len {output_len} should be 0 to return just the state or >0 to return the last output tokens"
         self.dropout = dropout
         self.split = split
@@ -40,8 +40,8 @@ class Model(nn.Module):
             cell_args['input_size'] = self.embed_dim
 
 
-        ### Handle optional Hippo preprocessing
-        self.preprocess = preprocess
+        ### Handle optional Hippo preprocessing <- 이게 뭐지??
+        self.preprocess = preprocess 
         if self.preprocess is not None:
             assert isinstance(self.preprocess, dict)
             assert 'order' in self.preprocess
@@ -101,13 +101,13 @@ class Model(nn.Module):
 
         # Apply main RNN
         if self.output_len > 0:
-            outputs, _ = self.rnn(inputs, init_state=initial_state, return_output=True)
+            outputs, _ = self.rnn(inputs, init_state=initial_state, return_output=True) #return_output = True -> return is (torch.stack(outputs), state)
             # get last output tokens
-            outputs = outputs[-self.output_len:,:,:]
+            outputs = outputs[-self.output_len:,:,:] # output sequence의 마지막 self.output_len 개수 만큼을 선택해서 mlp에 먹임
             outputs = outputs.transpose(0, 1)
             return self.output_mlp(outputs)
         else:
-            _, state = self.rnn(inputs, init_state=initial_state, return_output=False)
+            _, state = self.rnn(inputs, init_state=initial_state, return_output=False) #return_output = False -> return is state
             state = self.rnn.output(state)
             return self.output_mlp(state)
 

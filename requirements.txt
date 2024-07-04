@@ -1,10 +1,22 @@
-pytorch-lightning>=1.1.0
-torchtext
+# pytorch-lightning>=1.1.0
+# torchtext
+# numpy
+# scipy
+# sklearn
+# sktime>=0.5.1
+# matplotlib
+# tqdm
+# hydra-core>=1.0.4
+# munch
+
+pytorch-lightning==1.1.0
+torchtext==0.5.0
 numpy
 scipy
-sklearn
-sktime>=0.5.1
+# sklearn
+scikit-learn
+sktime==0.5.1
 matplotlib
 tqdm
-hydra-core>=1.0.4
+hydra-core==1.0.4
 munch

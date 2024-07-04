@@ -21,7 +21,10 @@ zoh_aliases       = ['zoh']
 
 
 class MemoryCell(RNNCell):
+    """This class handles the general architectural wiring of the HiPPO-RNN, in particular the interaction between the hidden state and the linear memory state.
 
+    Specific variants can be instantiated by subclassing this with an appropriately defined update_memory() method.
+    """
     name = None
     valid_keys = ['uxh', 'ux', 'uh', 'um', 'hxm', 'hx', 'hm', 'hh', 'bias', ]
 
@@ -37,32 +40,33 @@ class MemoryCell(RNNCell):
         }
 
 
-    def default_architecture(self):
+    def default_architecture(self): #RNN의 구성요소들인데, 이것들이 있냐 없냐를 말하는 건듯 #ab는 b -> a 연결을 의미하는 듯함 (맞는지 확인중) # m : c (coefficient) / u : f (memory) / h (hidden state) / x (input)
         return {
-            'ux': True,
+            'ux': True, # input -> f true <- 벌써 이상한데? <- diagram이랑 제법 다른가...
             # 'uh': True,
-            'um': False,
-            'hx': True,
-            'hm': True,
-            'hh': False,
-            'bias': True,
+            'um': False, # c -> f False
+            'hx': True, # x -> h True
+            'hm': True, # c -> h  True
+            'hh': False, # h -> h False <- 이것도 엄청나게 이상하다 h_{t-1}과 h_t연결이 없다는 건가?
+            # 'hh' : True, 
+            'bias': True, # bias True (bias for what?)
         }
 
 
     def __init__(self, input_size, hidden_size, memory_size, memory_order,
                  memory_activation='id',
-                 gate='G', # 'N' | 'G' | UR'
+                 gate='G', # 'N' | 'G' | UR' # <- 이건 머임 
                  memory_output=False,
                  **kwargs
                  ):
-        self.memory_size       = memory_size
-        self.memory_order      = memory_order
+        self.memory_size       = memory_size # default is 1
+        self.memory_order      = memory_order # N : OP degree. default equals hidden_size 
 
         self.memory_activation = memory_activation
         self.gate              = gate
         self.memory_output     = memory_output
 
-        super(MemoryCell, self).__init__(input_size, hidden_size, **kwargs)
+        super(MemoryCell, self).__init__(input_size, hidden_size, **kwargs) # 정확한 의미??
 
 
         self.input_to_hidden_size = self.input_size if self.architecture['hx'] else 0
@@ -70,7 +74,8 @@ class MemoryCell(RNNCell):
 
         # Construct and initialize u
         self.W_uxh = nn.Linear(self.input_to_memory_size + self.hidden_size, self.memory_size,
-                               bias=self.architecture['bias'])
+                               bias=self.architecture['bias']) # x,h -> u 
+                
         # nn.init.zeros_(self.W_uxh.bias)
         if 'uxh' in self.initializers:
             get_initializer(self.initializers['uxh'], self.memory_activation)(self.W_uxh.weight)
@@ -86,7 +91,7 @@ class MemoryCell(RNNCell):
         preact_args = [self.input_to_hidden_size + self.memory_to_hidden_size, self.hidden_size,
                        self.architecture['bias']]
 
-        self.W_hxm = preact_ctor(*preact_args)
+        self.W_hxm = preact_ctor(*preact_args) #x, m -> h
 
         if self.initializers.get('hxm', None) is not None:  # Re-init if passed in
             get_initializer(self.initializers['hxm'], self.hidden_activation)(self.W_hxm.weight)
@@ -97,7 +102,7 @@ class MemoryCell(RNNCell):
 
         if self.architecture['um']:
             # No bias here because the implementation is awkward otherwise, but probably doesn't matter
-            self.W_um = nn.Parameter(torch.Tensor(self.memory_size, self.memory_order))
+            self.W_um = nn.Parameter(torch.Tensor(self.memory_size, self.memory_order)) # u(f) -> m(c) ?? 어쨌건 이건 false
             get_initializer(self.initializers['um'], self.memory_activation)(self.W_um)
 
         if self.architecture['hh']:
@@ -111,7 +116,7 @@ class MemoryCell(RNNCell):
                 preact_ctor = Linear_
                 preact_args = [self.input_to_hidden_size + self.memory_to_hidden_size + self.hidden_size, self.hidden_size,
                                self.architecture['bias']]
-            self.W_gxm = Gate(self.hidden_size, preact_ctor, preact_args, mechanism=self.gate)
+            self.W_gxm = Gate(self.hidden_size, preact_ctor, preact_args, mechanism=self.gate) #Gate 'g' : standard sigmoid 
 
     def reset_parameters(self):
         # super().reset_parameters()
@@ -119,32 +124,34 @@ class MemoryCell(RNNCell):
         self.memory_activation_fn = get_activation(self.memory_activation, self.memory_size)
 
     def forward(self, input, state):
-        h, m, time_step = state
+        h, m, time_step = state # hidden state, c(t), t
 
-        input_to_hidden = input if self.architecture['hx'] else input.new_empty((0,))
-        input_to_memory = input if self.architecture['ux'] else input.new_empty((0,))
+        input_to_hidden = input if self.architecture['hx'] else input.new_empty((0,)) # default 'hx' is true
+        input_to_memory = input if self.architecture['ux'] else input.new_empty((0,)) # default 'ux' is true
 
         # Construct the update features
-        memory_preact = self.W_uxh(torch.cat((input_to_memory, h), dim=-1))  # (batch, memory_size)
-        if self.architecture['um']:
+        memory_preact = self.W_uxh(torch.cat((input_to_memory, h), dim=-1))  # (batch, memory_size) # 
+        if self.architecture['um']: # default 'um' is False
             memory_preact = memory_preact + (m * self.W_um).sum(dim=-1)
-        u = self.memory_activation_fn(memory_preact) # (batch, memory_size)
+        u = self.memory_activation_fn(memory_preact) # (batch, memory_size) # memory activation fn default: identity
 
         # Update the memory
-        m = self.update_memory(m, u, time_step) # (batch, memory_size, memory_order)
+        m = self.update_memory(m, u, time_step) # (batch, memory_size, memory_order) # c_{t-1} -> c_t
 
         # Update hidden state from memory
-        if self.architecture['hm']:
+        if self.architecture['hm']: # default 'hm' is True
             memory_to_hidden = m.view(input.shape[0], self.memory_size*self.memory_order)
         else:
             memory_to_hidden = input.new_empty((0,))
         m_inputs = (torch.cat((input_to_hidden, memory_to_hidden), dim=-1),)
         hidden_preact = self.W_hxm(*m_inputs)
 
-        if self.architecture['hh']:
+        if self.architecture['hh']: # default 'hh' is False
             hidden_preact = hidden_preact + self.W_hh(h)
         hidden = self.hidden_activation_fn(hidden_preact)
-
+        # print(f"hh is {self.architecture['hh']}") #False
+        # print(f"hm is {self.architecture['hm']}") #True
+        # print("Hallelujah")
 
         # Construct gate if necessary
         if self.gate is None:
@@ -185,7 +192,7 @@ class MemoryCell(RNNCell):
         else:
             return h
 
-    def state_size(self):
+    def state_size(self): # hidden state & memory state size 
         return self.hidden_size + self.memory_size*self.memory_order
 
     def output_size(self):
@@ -283,10 +290,11 @@ class LSICell(MemoryCell):
         u = u.unsqueeze(-1) # (B, M, 1)
         t = time_step - 1 + self.init_t
         if t < 0:
-            return F.pad(u, (0, self.memory_order - 1))
+            return F.pad(u, (0, self.memory_order - 1)) # 뭐지 이게?
         else:
             if t >= self.max_length: t = self.max_length - 1
-            return m + F.linear(m, self.A[t]) + F.linear(u, self.B[t])
+            return m + F.linear(m, self.A[t]) + F.linear(u, self.B[t]) # m + m (A_k)^t + u B_k # m is c. u is f. 
+          
 
 
 class TimeMemoryCell(MemoryCell):

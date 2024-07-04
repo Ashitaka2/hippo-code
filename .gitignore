@@ -1,3 +1,4 @@
+.gitignore
 config/
 lightning_logs/
 results/
@@ -14,6 +15,7 @@ datasets/wikitext-2/
 ray.sh
 ray_config/redis_address
 ray_config/redis_password
+logs
 
 # Created by https://www.gitignore.io/api/python
 # Edit at https://www.gitignore.io/?templates=python

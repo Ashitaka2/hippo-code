@@ -61,11 +61,12 @@ class RNN(nn.Module):
 
         outputs = []
         if not is_packed:
-            for input in torch.unbind(inputs, dim=0):
+            for input in torch.unbind(inputs, dim=0): # inputs: [length, batch, dim] -> the for loop iterates over L (model.py)
                 if self.use_dropout:
                     ## Recurrent Dropout
                     input = input * input_dropout
-                output, new_state = self.cell.forward(input, state)
+                output, new_state = self.cell.forward(input, state) # RNN cell forward. 1 timestep
+                
                 if self.use_dropout:
                     output = output * output_dropout
                     try:
