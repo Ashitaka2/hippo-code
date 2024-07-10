@@ -137,7 +137,13 @@ class MemoryCell(RNNCell):
 
         # Update the memory
         m = self.update_memory(m, u, time_step) # (batch, memory_size, memory_order) # c_{t-1} -> c_t
-
+        
+        # debugging         
+        # if time_step < 5:
+        #     print(f"timestep is : {time_step}")
+        #     print(f"u is : {u}")
+        #     print(f"m is : {m}")
+            
         # Update hidden state from memory
         if self.architecture['hm']: # default 'hm' is True
             memory_to_hidden = m.view(input.shape[0], self.memory_size*self.memory_order)
@@ -180,7 +186,7 @@ class MemoryCell(RNNCell):
         batch_size = input.size(0) if batch_size is None else batch_size
         return (input.new_zeros(batch_size, self.hidden_size, requires_grad=False),
                 input.new_zeros(batch_size, self.memory_size, self.memory_order, requires_grad=False),
-                0)
+                0) # construct initial h, m(c), timestep=0 
 
     def output(self, state):
         """ Converts a state into a single output (tensor) """
@@ -230,6 +236,7 @@ class LTICell(MemoryCell):
 
     # TODO: proper way to implement LR scale is a preprocess() function that occurs once per unroll
     # also very useful for orthogonal params
+    
     def update_memory(self, m, u, time_step):
         u = u.unsqueeze(-1) # (B, M, 1)
         if self.trainable_scale <= 0.:
@@ -264,19 +271,23 @@ class LSICell(MemoryCell):
         B_stacked = np.empty((max_length, memory_order), dtype=B.dtype)
         B = B[:,0]
         N = memory_order
+        # print(A)
         for t in range(1, max_length + 1):
-            At = A / t
+        # for t in range(0, max_length): # I am changing this so that A_stacked[t] corresponds to A/t (not A_stacked[t-1])
+            At = A / t # A is minus sign here.
             Bt = B / t
+            At_ = A / (t+1)
+            
             if discretization in forward_aliases:
                 A_stacked[t - 1] = np.eye(N) + At
                 B_stacked[t - 1] = Bt
             elif discretization in backward_aliases:
-                A_stacked[t - 1] = la.solve_triangular(np.eye(N) - At, np.eye(N), lower=True)
-                B_stacked[t - 1] = la.solve_triangular(np.eye(N) - At, Bt, lower=True)
+                A_stacked[t - 1] = la.solve_triangular(np.eye(N) - At_, np.eye(N), lower=True) #solve_triangular(a,b) -> solve ax = b
+                B_stacked[t - 1] = la.solve_triangular(np.eye(N) - At_, Bt, lower=True)
             elif discretization in bilinear_aliases:
-                A_stacked[t - 1] = la.solve_triangular(np.eye(N) - At / 2, np.eye(N) + At / 2, lower=True)
-                B_stacked[t - 1] = la.solve_triangular(np.eye(N) - At / 2, Bt, lower=True)
-            elif discretization in zoh_aliases:
+                A_stacked[t - 1] = la.solve_triangular(np.eye(N) - At_ / 2, np.eye(N) + At / 2, lower=True)
+                B_stacked[t - 1] = la.solve_triangular(np.eye(N) - At_ / 2, Bt, lower=True)
+            elif discretization in zoh_aliases: # not used right now
                 A_stacked[t - 1] = la.expm(A * (math.log(t + 1) - math.log(t)))
                 B_stacked[t - 1] = la.solve_triangular(A, A_stacked[t - 1] @ B - B, lower=True)
         B_stacked = B_stacked[:, :, None]
@@ -286,12 +297,32 @@ class LSICell(MemoryCell):
         self.register_buffer('B', torch.Tensor(B_stacked))
 
 
-    def update_memory(self, m, u, time_step):
+    def update_memory(self, m, u, time_step): # making c(t) from c(t-1) -> so when t==0, it is initialization.
         u = u.unsqueeze(-1) # (B, M, 1)
-        t = time_step - 1 + self.init_t
-        if t < 0:
-            return F.pad(u, (0, self.memory_order - 1)) # 뭐지 이게?
-        else:
+        t = time_step + self.init_t - 2
+        if t == -2:
+            return F.pad(u, (0, self.memory_order - 1)) # (B, M, self.memory_order)
+        elif t == -1:
+            m_0 = torch.zeros(self.memory_order).to(m)
+            m_0[0] = 1/2
+            m_0[1] = 1/(2*math.sqrt(3))
+            m_0 = m_0.unsqueeze(0).unsqueeze(0)
+            # print(m_0.shape)
+            # m_0 = torch.zeros_like(m) # (B, M, N)
+            # m_0 = m_0.transpose(0,2)
+            # m_0[:][0][0] = 1/2
+            # m_0[:][1][0] = 1/(2*math.sqrt(3))
+            # m_0 = m_0.transpose(0,2)
+            # print(u.shape)
+            u_prime = u - m[:,0,0].unsqueeze(-1).unsqueeze(-1) # m(0) = (u(0), 0, 0, ... ) # u(1)-u(0) /1 를 의도함
+            # print(u_prime.shape)
+            # u_prime = u_prime.unsqueeze(1)
+            # print(f"u_prime is {u_prime}")
+            # print(f"m_0 is {m_0}")
+            # print(f"u_prime * m_0 is {u_prime * m_0}")
+            # print(f"u_prime * m_0 shape is {(u_prime * m_0).shape}")
+            return u_prime * m_0 
+        else: # t >= 0
             if t >= self.max_length: t = self.max_length - 1
             return m + F.linear(m, self.A[t]) + F.linear(u, self.B[t]) # m + m (A_k)^t + u B_k # m is c. u is f. 
           

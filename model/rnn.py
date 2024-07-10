@@ -67,6 +67,10 @@ class RNN(nn.Module):
                     input = input * input_dropout
                 output, new_state = self.cell.forward(input, state) # RNN cell forward. 1 timestep
                 
+                # print(f"state is : {state[1].shape}") # h, m, timestep
+                # print(f"state shape is : {state.shape}") #tuple
+                
+                
                 if self.use_dropout:
                     output = output * output_dropout
                     try:
