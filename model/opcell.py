@@ -52,6 +52,10 @@ class LegendreScaleCell(OPLSICell): # legs class
     name = 'legs'
     measure = 'legs'
     
+class LegendreScaleCell(OPLSICell): # legs class
+    name = 'ablate'
+    measure = 'ablate'
+    
 class LegendreScaleTCell(OPLTICell):
     name = 'legst'
     measure = 'legs'

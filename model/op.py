@@ -62,6 +62,13 @@ def transition(measure, N, **measure_args):
         T = np.sqrt(np.diag(2 * q + 1))
         A = T @ M @ np.linalg.inv(T)
         B = np.diag(T)[:, None]
+    
+    # No HiPPO (ablation)
+    elif measure == 'ablate':
+        q = np.arange(N, dtype=np.float64)
+        A = -np.diag(q + 1)
+        T = np.sqrt(np.diag(2 * q + 1))
+        B = np.diag(T)[:, None]
 
     return A, B
 
