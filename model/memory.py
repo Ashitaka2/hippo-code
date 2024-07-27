@@ -264,6 +264,7 @@ class LSICell(MemoryCell):
         B_stacked = np.empty((max_length, memory_order), dtype=B.dtype)
         B = B[:,0]
         N = memory_order
+        print(f" memory order is {N}")
         for t in range(1, max_length + 1):
             At = A / t
             Bt = B / t
