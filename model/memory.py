@@ -124,8 +124,9 @@ class MemoryCell(RNNCell):
         self.memory_activation_fn = get_activation(self.memory_activation, self.memory_size)
 
     def forward(self, input, state):
-        h, m, time_step = state # hidden state, c(t), t
-
+        # h, m, time_step = state # hidden state, c(t), t
+        h, m, u_, time_step = state # hidden state, c(t), f(t-1), t
+        # print(f"retrieved u_ shape : {u_.shape}")
         input_to_hidden = input if self.architecture['hx'] else input.new_empty((0,)) # default 'hx' is true
         input_to_memory = input if self.architecture['ux'] else input.new_empty((0,)) # default 'ux' is true
 
@@ -134,9 +135,10 @@ class MemoryCell(RNNCell):
         if self.architecture['um']: # default 'um' is False
             memory_preact = memory_preact + (m * self.W_um).sum(dim=-1)
         u = self.memory_activation_fn(memory_preact) # (batch, memory_size) # memory activation fn default: identity
-
+        # print(f"made u shape is : {u.shape}")
         # Update the memory
-        m = self.update_memory(m, u, time_step) # (batch, memory_size, memory_order) # c_{t-1} -> c_t
+        # m = self.update_memory(m, u, time_step) # (batch, memory_size, memory_order) # c_{t-1} -> c_t
+        m = self.update_memory(m, u, u_, time_step) # (batch, memory_size, memory_order) # c_{t-1} -> c_t
 
         # Update hidden state from memory
         if self.architecture['hm']: # default 'hm' is True
@@ -162,7 +164,8 @@ class MemoryCell(RNNCell):
             g = self.W_gxm(*m_inputs)
             h = (1.-g) * h + g * hidden
 
-        next_state = (h, m, time_step + 1)
+        # next_state = (h, m, time_step + 1)
+        next_state = (h, m, u, time_step + 1)
         output = self.output(next_state)
 
         return output, next_state
@@ -176,15 +179,23 @@ class MemoryCell(RNNCell):
         """
         raise NotImplementedError
 
-    def default_state(self, input, batch_size=None):
+    # def default_state(self, input, batch_size=None): # h, m, timestep
+    #     batch_size = input.size(0) if batch_size is None else batch_size
+    #     return (input.new_zeros(batch_size, self.hidden_size, requires_grad=False),
+    #             input.new_zeros(batch_size, self.memory_size, self.memory_order, requires_grad=False),
+    #             0)
+    def default_state(self, input, batch_size=None): # h, m, u_, timestep
         batch_size = input.size(0) if batch_size is None else batch_size
         return (input.new_zeros(batch_size, self.hidden_size, requires_grad=False),
                 input.new_zeros(batch_size, self.memory_size, self.memory_order, requires_grad=False),
+                input.new_zeros(batch_size, self.memory_size, requires_grad=False),
                 0)
+        
 
     def output(self, state):
         """ Converts a state into a single output (tensor) """
-        h, m, time_step = state
+        # h, m, time_step = state
+        h, m, u_, time_step = state
 
         if self.memory_output:
             hm = torch.cat((h, m.view(m.shape[0], self.memory_size*self.memory_order)), dim=-1)
@@ -262,39 +273,83 @@ class LSICell(MemoryCell):
 
         A_stacked = np.empty((max_length, memory_order, memory_order), dtype=A.dtype)
         B_stacked = np.empty((max_length, memory_order), dtype=B.dtype)
+        Bb_stacked = np.empty((max_length, memory_order), dtype=B.dtype)
+        
         B = B[:,0]
         N = memory_order
+        print(f'memory order : {N}')
+        
         for t in range(1, max_length + 1):
             At = A / t
             Bt = B / t
+            
+            At_ = A / (t+1)
+            Bt_ = B / (t+1)
             if discretization in forward_aliases:
-                A_stacked[t - 1] = np.eye(N) + At
-                B_stacked[t - 1] = Bt
+                A_stacked[t] = np.eye(N) + At
+                B_stacked[t] = Bt
             elif discretization in backward_aliases:
-                A_stacked[t - 1] = la.solve_triangular(np.eye(N) - At, np.eye(N), lower=True)
-                B_stacked[t - 1] = la.solve_triangular(np.eye(N) - At, Bt, lower=True)
-            elif discretization in bilinear_aliases:
-                A_stacked[t - 1] = la.solve_triangular(np.eye(N) - At / 2, np.eye(N) + At / 2, lower=True)
-                B_stacked[t - 1] = la.solve_triangular(np.eye(N) - At / 2, Bt, lower=True)
-            elif discretization in zoh_aliases:
-                A_stacked[t - 1] = la.expm(A * (math.log(t + 1) - math.log(t)))
-                B_stacked[t - 1] = la.solve_triangular(A, A_stacked[t - 1] @ B - B, lower=True)
+                A_stacked[t] = la.solve_triangular(np.eye(N) - At, np.eye(N), lower=True)
+                B_stacked[t] = la.solve_triangular(np.eye(N) - At, Bt, lower=True)
+                
+            elif discretization in bilinear_aliases: # Modify so that it is 'actually' bilinear
+                A0 = la.solve_triangular(np.eye(N) - A / 2, np.eye(N), lower=True)
+                B0 = la.solve_triangular(np.eye(N) - A / 2, B / 2, lower=True)
+                
+                A_stacked[t - 1] = la.solve_triangular(np.eye(N) - At_ / 2, np.eye(N) + At / 2, lower=True)
+                B_stacked[t - 1] = la.solve_triangular(np.eye(N) - At_ / 2, Bt / 2, lower=True)
+                Bb_stacked[t - 1] = la.solve_triangular(np.eye(N) - At / 2, Bt / 2, lower=True)                
+                
+            # elif discretization in zoh_aliases:
+            #     A_stacked[t - 1] = la.expm(A * (math.log(t + 1) - math.log(t)))
+            #     B_stacked[t - 1] = la.solve_triangular(A, A_stacked[t - 1] @ B - B, lower=True)
         B_stacked = B_stacked[:, :, None]
-
-        A_stacked -= np.eye(memory_order)  # puts into form: x += Ax
+        Bb_stacked = Bb_stacked[:, :, None]
+        
+        A_stacked -= np.eye(memory_order)  # puts into form: x += Ax # 밑에 m = m + ~~ 형태로 적어서 
         self.register_buffer('A', torch.Tensor(A_stacked))
         self.register_buffer('B', torch.Tensor(B_stacked))
 
+        self.register_buffer('A0', torch.Tensor(A0))
+        self.register_buffer('B0', torch.Tensor(B0))
+        self.register_buffer('Bb', torch.Tensor(Bb_stacked))
+        
+        self.B0 = self.B0.unsqueeze(-1)
 
-    def update_memory(self, m, u, time_step):
+    def update_memory(self, m, u, u_, time_step):
         u = u.unsqueeze(-1) # (B, M, 1)
+        u_ = u_.unsqueeze(-1)
         t = time_step - 1 + self.init_t
+        # print(f"t is {t}")
+        # print(f"u is {u[0]}")
+        # print(f"u_ is {u_[0]}")
         if t < 0:
-            return F.pad(u, (0, self.memory_order - 1)) # 뭐지 이게?
+            return F.pad(u, (0, self.memory_order - 1)) # c(0) 생성
+        
+        if t == 0:
+            # print(f"m size is : {m.shape}")
+            # print(f"A size is : {self.A[0].shape}")
+            # print(f"A0 size is : {self.A0.shape}")
+            # print(f"u size is : {u.shape}")
+            # print(f"u_ size is : {u_.shape}")
+            # print(f"B size is : {self.B[0].shape}")
+            # print(f"B0 size is : {self.B0.shape}")
+            # print(f"Bb size is : {self.Bb[0].shape}")
+
+            return F.linear(m, self.A0) + F.linear(u, self.B0) # m + m (A_k)^t + u B_k # m is c. u is f. #To be precise, this part needs to be modified to consider t=0 forward part.
+        
+        # elif t >= self.max_length -1:
+        #     t = self.max_length - 1
+        
         else:
             if t >= self.max_length: t = self.max_length - 1
-            return m + F.linear(m, self.A[t]) + F.linear(u, self.B[t]) # m + m (A_k)^t + u B_k # m is c. u is f. 
-          
+            # print(f"m size is : {m.shape}")
+            # print(f"A size is : {self.A[0].shape}")
+            # print(f"u size is : {u.shape}")
+            # print(f"u_ size is : {u_.shape}")
+            # print(f"B size is : {self.B[0].shape}")
+            # print(f"Bb size is : {self.Bb[0].shape}")
+            return m + F.linear(m, self.A[t-1]) + F.linear(u_, self.B[t-1]) + F.linear(u, self.Bb[t])          
 
 
 class TimeMemoryCell(MemoryCell):
