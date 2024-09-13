@@ -291,7 +291,8 @@ class LSICell(MemoryCell):
         u = u.unsqueeze(-1) # (B, M, 1)
         t = time_step - 1 + self.init_t
         if t < 0:
-            return F.pad(u, (0, self.memory_order - 1)) # 뭐지 이게?
+            return F.pad(u, (0, self.memory_order - 1)) 
+            # return torch.zeros_like(m) # 0 init (잘못된것)
         else:
             if t >= self.max_length: t = self.max_length - 1
             return m + F.linear(m, self.A[t]) + F.linear(u, self.B[t]) # m + m (A_k)^t + u B_k # m is c. u is f. 
