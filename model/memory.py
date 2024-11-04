@@ -326,23 +326,24 @@ class LSICell(MemoryCell):
         if t < 0:
             return F.pad(u, (0, self.memory_order - 1)) # c(0) 생성
         
-        if t == 0:
-            # print(f"m size is : {m.shape}")
-            # print(f"A size is : {self.A[0].shape}")
-            # print(f"A0 size is : {self.A0.shape}")
+        if t == 0: # u=f(1) u_=f(0)
             # print(f"u size is : {u.shape}")
-            # print(f"u_ size is : {u_.shape}")
-            # print(f"B size is : {self.B[0].shape}")
-            # print(f"B0 size is : {self.B0.shape}")
-            # print(f"Bb size is : {self.Bb[0].shape}")
-
-            return F.linear(m, self.A0) + F.linear(u, self.B0) # m + m (A_k)^t + u B_k # m is c. u is f. #To be precise, this part needs to be modified to consider t=0 forward part.
-        
+            # print(f"f_ size is {f_.shape}") # (B, 1, 512)
+            f_ = torch.zeros_like(m)
+            f_[:,0,0] =1/2
+            f_[:,0,1] =1/(4*math.sqrt(3))
+            f_ = (u-u_)*f_
+            # print(f"f_ is {f_[0]}")
+            # return F.linear(m, self.A0) + F.linear(u, self.B0) # m + m (A_k)^t + u B_k # m is c. u is f. #To be precise, this part needs to be modified to consider t=0 forward part.
+            return F.linear(m, self.A0) + F.linear(f_, self.A0) + F.linear(u, self.B0)
+            
+            
         # elif t >= self.max_length -1:
         #     t = self.max_length - 1
         
         else:
-            if t >= self.max_length: t = self.max_length - 1
+            # if t >= self.max_length: t = self.max_length # This line is not needed. Why? -> Check Syntax
+            
             # print(f"m size is : {m.shape}")
             # print(f"A size is : {self.A[0].shape}")
             # print(f"u size is : {u.shape}")
